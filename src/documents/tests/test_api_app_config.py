@@ -194,6 +194,56 @@ class TestApiAppConfig(DirectoriesMixin, APITestCase):
         self.assertEqual(config.language, None)
         self.assertEqual(config.barcode_tag_mapping, None)
 
+    def test_api_update_config_rejects_non_dict_user_args(self) -> None:
+        """
+        GIVEN:
+            - API request to update app config with a JSON-encoded non-dict
+              value (e.g. a bare string) for the user_args JSONField
+        WHEN:
+            - API is called
+        THEN:
+            - Request is rejected with a 400, not silently accepted
+            - Config is not updated
+        """
+        response = self.client.patch(
+            f"{self.ENDPOINT}1/",
+            json.dumps(
+                {
+                    "user_args": json.dumps("not a dict"),
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        config = ApplicationConfiguration.objects.first()
+        assert config is not None
+        self.assertEqual(config.user_args, None)
+
+    def test_api_update_config_rejects_non_dict_barcode_tag_mapping(self) -> None:
+        """
+        GIVEN:
+            - API request to update app config with a JSON-encoded non-dict
+              value (e.g. a bare list) for the barcode_tag_mapping JSONField
+        WHEN:
+            - API is called
+        THEN:
+            - Request is rejected with a 400, not silently accepted
+            - Config is not updated
+        """
+        response = self.client.patch(
+            f"{self.ENDPOINT}1/",
+            json.dumps(
+                {
+                    "barcode_tag_mapping": json.dumps([1, 2, 3]),
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        config = ApplicationConfiguration.objects.first()
+        assert config is not None
+        self.assertEqual(config.barcode_tag_mapping, None)
+
     def test_api_replace_app_logo(self) -> None:
         """
         GIVEN:

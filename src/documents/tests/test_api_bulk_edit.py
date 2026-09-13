@@ -1166,6 +1166,33 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
         m.assert_not_called()
 
     @mock.patch("documents.serialisers.bulk_edit.set_permissions")
+    def test_set_permissions_rejects_nonexistent_owner(self, m) -> None:
+        """
+        BulkEditSerializer._validate_owner called User.objects.get(pk=owner)
+        with no try/except, so a syntactically valid but nonexistent user
+        id raised an uncaught User.DoesNotExist instead of a clean 400.
+        """
+        self.setup_mock(m, "set_permissions")
+
+        response = self.client.post(
+            "/api/documents/bulk_edit/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "method": "set_permissions",
+                    "parameters": {
+                        "set_permissions": {"view": {"users": [self.user.id]}},
+                        "owner": 999999,
+                    },
+                },
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.serialisers.bulk_edit.set_permissions")
     def test_set_permissions_merge(self, m) -> None:
         self.setup_mock(m, "set_permissions")
         user1 = User.objects.create(username="user1")
@@ -1431,6 +1458,53 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
                 {
                     "documents": [self.doc2.id, self.doc3.id],
                     "degrees": 90.5,
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.serialisers.bulk_edit.rotate")
+    def test_bulk_edit_rotate_rejects_null_degrees(self, m) -> None:
+        """
+        BulkEditSerializer._validate_parameters_rotate's
+        `float(parameters["degrees"])` raised an uncaught TypeError for
+        None (only ValueError was caught), reachable via the legacy
+        generic /api/documents/bulk_edit/ method="rotate" path (the
+        dedicated /api/documents/rotate/ endpoint isn't affected, its
+        `degrees` field is a typed IntegerField).
+        """
+        self.setup_mock(m, "rotate")
+        response = self.client.post(
+            "/api/documents/bulk_edit/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "method": "rotate",
+                    "parameters": {"degrees": None},
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.serialisers.bulk_edit.split")
+    def test_bulk_edit_split_rejects_null_pages(self, m) -> None:
+        """
+        BulkEditSerializer._validate_parameters_split called
+        parameters["pages"].split(",") with no type check, so a null
+        value raised an uncaught AttributeError instead of a clean 400.
+        """
+        self.setup_mock(m, "split")
+        response = self.client.post(
+            "/api/documents/bulk_edit/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "method": "split",
+                    "parameters": {"pages": None},
                 },
             ),
             content_type="application/json",

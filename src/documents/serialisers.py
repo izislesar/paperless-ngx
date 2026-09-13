@@ -2037,10 +2037,10 @@ class BulkEditSerializer(
             raise serializers.ValidationError("remove_custom_fields not specified")
 
     def _validate_owner(self, owner):
-        ownerUser = User.objects.get(pk=owner)
-        if ownerUser is None:
+        try:
+            return User.objects.get(pk=owner)
+        except User.DoesNotExist:
             raise serializers.ValidationError("Specified owner cannot be found")
-        return ownerUser
 
     def _validate_parameters_set_permissions(self, parameters) -> None:
         if "set_permissions" not in parameters:
@@ -2060,7 +2060,7 @@ class BulkEditSerializer(
                 or not float(parameters["degrees"]).is_integer()
             ):
                 raise serializers.ValidationError("invalid rotation degrees")
-        except ValueError:
+        except (TypeError, ValueError):
             raise serializers.ValidationError("invalid rotation degrees")
 
     def _validate_source_mode(self, parameters) -> None:
@@ -2073,6 +2073,8 @@ class BulkEditSerializer(
     def _validate_parameters_split(self, parameters) -> None:
         if "pages" not in parameters:
             raise serializers.ValidationError("pages not specified")
+        if not isinstance(parameters["pages"], str):
+            raise serializers.ValidationError("invalid pages specified")
         try:
             pages = []
             docs = parameters["pages"].split(",")

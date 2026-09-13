@@ -1193,6 +1193,38 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
         m.assert_not_called()
 
     @mock.patch("documents.serialisers.bulk_edit.set_permissions")
+    def test_set_permissions_rejects_wrong_typed_owner(self, m) -> None:
+        """
+        _validate_owner only caught User.DoesNotExist -- a wrong-typed
+        owner (list/dict/non-numeric string) reaches
+        User.objects.get(pk=owner) and raises an uncaught TypeError or
+        ValueError instead, since `parameters` is a bare DictField with
+        no type checking on "owner" at that level.
+        """
+        self.setup_mock(m, "set_permissions")
+
+        for bad_owner in (["not", "an", "id"], {"nested": "dict"}, "not-a-number"):
+            with self.subTest(owner=bad_owner):
+                response = self.client.post(
+                    "/api/documents/bulk_edit/",
+                    json.dumps(
+                        {
+                            "documents": [self.doc2.id],
+                            "method": "set_permissions",
+                            "parameters": {
+                                "set_permissions": {
+                                    "view": {"users": [self.user.id]},
+                                },
+                                "owner": bad_owner,
+                            },
+                        },
+                    ),
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.serialisers.bulk_edit.set_permissions")
     def test_set_permissions_merge(self, m) -> None:
         self.setup_mock(m, "set_permissions")
         user1 = User.objects.create(username="user1")

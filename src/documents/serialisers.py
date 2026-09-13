@@ -2039,7 +2039,7 @@ class BulkEditSerializer(
     def _validate_owner(self, owner):
         try:
             return User.objects.get(pk=owner)
-        except User.DoesNotExist:
+        except (User.DoesNotExist, TypeError, ValueError):
             raise serializers.ValidationError("Specified owner cannot be found")
 
     def _validate_parameters_set_permissions(self, parameters) -> None:

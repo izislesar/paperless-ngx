@@ -210,6 +210,9 @@ class MatchingModelSerializer(serializers.ModelSerializer[Any]):
         return match
 
 
+PERMISSION_ACTIONS = ("view", "change")
+
+
 class SetPermissionsMixin:
     def _validate_user_ids(self, user_ids):
         users = User.objects.none()
@@ -232,12 +235,9 @@ class SetPermissionsMixin:
         return groups
 
     def validate_set_permissions(self, set_permissions=None):
-        permissions_dict = {
-            "view": {},
-            "change": {},
-        }
+        permissions_dict = {action: {} for action in PERMISSION_ACTIONS}
         if set_permissions is not None:
-            for action in ["view", "change"]:
+            for action in PERMISSION_ACTIONS:
                 if action in set_permissions:
                     if "users" in set_permissions[action]:
                         users = set_permissions[action]["users"]
@@ -284,7 +284,7 @@ class SetPermissionsSerializer(serializers.Serializer[dict[str, Any]]):
 
     def to_internal_value(self, data):
         if isinstance(data, dict):
-            unknown_keys = set(data) - {"view", "change"}
+            unknown_keys = set(data) - set(PERMISSION_ACTIONS)
             if unknown_keys:
                 raise serializers.ValidationError(
                     {key: "Unknown permission action." for key in sorted(unknown_keys)},
@@ -3032,8 +3032,8 @@ class BulkEditObjectsSerializer(SerializerWithPerms, SetPermissionsMixin):
             )
         return objects
 
-    def _validate_permissions(self, permissions) -> None:
-        self.validate_set_permissions(
+    def _validate_permissions(self, permissions) -> dict:
+        return self.validate_set_permissions(
             permissions,
         )
 
@@ -3061,7 +3061,7 @@ class BulkEditObjectsSerializer(SerializerWithPerms, SetPermissionsMixin):
                     raise serializers.ValidationError(
                         "permissions must not be empty",
                     )
-                self._validate_permissions(permissions)
+                attrs["permissions"] = self._validate_permissions(permissions)
 
         return attrs
 

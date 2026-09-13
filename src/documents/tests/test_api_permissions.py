@@ -1574,6 +1574,34 @@ class TestBulkEditObjectPermissions(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_bulk_object_set_permissions_null_users_is_a_noop(self) -> None:
+        """
+        GIVEN:
+            - Existing objects
+        WHEN:
+            - bulk_edit_objects API endpoint is called with set_permissions
+              operation and an explicit null for users/groups on an action
+        THEN:
+            - Request succeeds and is treated as "no users/groups for this
+              action", not a crash -- the normalized (id-checked) dict
+              returned by validate_set_permissions must actually be used,
+              not discarded in favor of the raw un-normalized input.
+        """
+        response = self.client.post(
+            "/api/bulk_edit_objects/",
+            json.dumps(
+                {
+                    "objects": [self.t1.id],
+                    "object_type": "tags",
+                    "operation": "set_permissions",
+                    "permissions": {"view": {"users": None}},
+                },
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_bulk_edit_object_permissions_validation(self) -> None:
         """
         GIVEN:

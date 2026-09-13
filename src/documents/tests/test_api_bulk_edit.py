@@ -1769,7 +1769,14 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn(b"valid integer is required", response.content)
 
-        for doc_index in (-1, 2**32):
+        # A negative doc index is rejected by PdfEditOperationSerializer's
+        # own min_value=0 field constraint, before the "doc index is out
+        # of bounds" object-level check (against len(operations)) ever
+        # runs -- hence the different expected message per case.
+        for doc_index, expected_message in (
+            (-1, b"greater than or equal to 0"),
+            (2**32, b"doc index is out of bounds"),
+        ):
             with self.subTest(doc_index=doc_index):
                 response = self.client.post(
                     "/api/documents/edit_pdf/",
@@ -1782,7 +1789,7 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
                     content_type="application/json",
                 )
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                self.assertIn(b"doc index is out of bounds", response.content)
+                self.assertIn(expected_message, response.content)
 
         response = self.client.post(
             "/api/documents/edit_pdf/",

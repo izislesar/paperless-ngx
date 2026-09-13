@@ -1499,6 +1499,81 @@ class TestBulkEditObjectPermissions(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(Tag.objects.filter(pk=self.t1.id).exists())
 
+    def test_bulk_object_set_permissions_rejects_empty_permissions(self) -> None:
+        """
+        GIVEN:
+            - Existing objects
+        WHEN:
+            - bulk_edit_objects API endpoint is called with set_permissions
+              operation and an empty permissions dict
+        THEN:
+            - Validation fails rather than silently applying a no-op
+        """
+        response = self.client.post(
+            "/api/bulk_edit_objects/",
+            json.dumps(
+                {
+                    "objects": [self.t1.id],
+                    "object_type": "tags",
+                    "operation": "set_permissions",
+                    "permissions": {},
+                },
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bulk_object_set_permissions_rejects_non_dict_permissions(self) -> None:
+        """
+        GIVEN:
+            - Existing objects
+        WHEN:
+            - bulk_edit_objects API endpoint is called with set_permissions
+              operation and a non-dict permissions value
+        THEN:
+            - Validation fails rather than crashing
+        """
+        response = self.client.post(
+            "/api/bulk_edit_objects/",
+            json.dumps(
+                {
+                    "objects": [self.t1.id],
+                    "object_type": "tags",
+                    "operation": "set_permissions",
+                    "permissions": False,
+                },
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bulk_object_set_permissions_rejects_unknown_action(self) -> None:
+        """
+        GIVEN:
+            - Existing objects
+        WHEN:
+            - bulk_edit_objects API endpoint is called with set_permissions
+              operation and an unrecognized permission action name
+        THEN:
+            - Validation fails rather than silently no-oping
+        """
+        response = self.client.post(
+            "/api/bulk_edit_objects/",
+            json.dumps(
+                {
+                    "objects": [self.t1.id],
+                    "object_type": "tags",
+                    "operation": "set_permissions",
+                    "permissions": {"not_a_real_action": {"users": [self.user1.id]}},
+                },
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_bulk_edit_object_permissions_validation(self) -> None:
         """
         GIVEN:

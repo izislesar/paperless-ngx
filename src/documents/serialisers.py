@@ -265,41 +265,31 @@ class SerializerWithPerms(serializers.Serializer[dict[str, Any]]):
         super().__init__(*args, **kwargs)
 
 
-@extend_schema_field(
-    field={
-        "type": "object",
-        "properties": {
-            "view": {
-                "type": "object",
-                "properties": {
-                    "users": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                    },
-                    "groups": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                    },
-                },
-            },
-            "change": {
-                "type": "object",
-                "properties": {
-                    "users": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                    },
-                    "groups": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                    },
-                },
-            },
-        },
-    },
-)
-class SetPermissionsSerializer(serializers.DictField):
-    pass
+class _PermissionSetSerializer(serializers.Serializer[dict[str, Any]]):
+    users = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_null=True,
+    )
+    groups = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_null=True,
+    )
+
+
+class SetPermissionsSerializer(serializers.Serializer[dict[str, Any]]):
+    view = _PermissionSetSerializer(required=False)
+    change = _PermissionSetSerializer(required=False)
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            unknown_keys = set(data) - {"view", "change"}
+            if unknown_keys:
+                raise serializers.ValidationError(
+                    {key: "Unknown permission action." for key in sorted(unknown_keys)},
+                )
+        return super().to_internal_value(data)
 
 
 class OwnedObjectSerializer(
@@ -470,7 +460,6 @@ class OwnedObjectSerializer(
 
     set_permissions = SetPermissionsSerializer(
         label="Set permissions",
-        allow_empty=True,
         required=False,
         write_only=True,
     )
@@ -2045,8 +2034,13 @@ class BulkEditSerializer(
     def _validate_parameters_set_permissions(self, parameters) -> None:
         if "set_permissions" not in parameters:
             raise serializers.ValidationError("set_permissions not specified")
+        set_permissions = parameters["set_permissions"]
+        if set_permissions is not None:
+            set_permissions = SetPermissionsSerializer().run_validation(
+                set_permissions,
+            )
         parameters["set_permissions"] = self.validate_set_permissions(
-            parameters["set_permissions"],
+            set_permissions,
         )
         if "owner" in parameters and parameters["owner"] is not None:
             self._validate_owner(parameters["owner"])
@@ -3001,9 +2995,8 @@ class BulkEditObjectsSerializer(SerializerWithPerms, SetPermissionsMixin):
         allow_null=True,
     )
 
-    permissions = serializers.DictField(
+    permissions = SetPermissionsSerializer(
         label="Set permissions",
-        allow_empty=False,
         required=False,
         write_only=True,
     )
@@ -3064,6 +3057,10 @@ class BulkEditObjectsSerializer(SerializerWithPerms, SetPermissionsMixin):
         if operation == "set_permissions":
             permissions = attrs.get("permissions")
             if permissions is not None:
+                if not permissions:
+                    raise serializers.ValidationError(
+                        "permissions must not be empty",
+                    )
                 self._validate_permissions(permissions)
 
         return attrs

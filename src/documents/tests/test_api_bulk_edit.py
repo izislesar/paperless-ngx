@@ -1728,7 +1728,7 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn(b"invalid operation entry", response.content)
+        self.assertIn(b"Expected a dictionary", response.content)
 
         response = self.client.post(
             "/api/documents/edit_pdf/",
@@ -1741,7 +1741,7 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn(b"page must be an integer", response.content)
+        self.assertIn(b"valid integer is required", response.content)
 
         response = self.client.post(
             "/api/documents/edit_pdf/",
@@ -1754,7 +1754,7 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn(b"rotate must be an integer", response.content)
+        self.assertIn(b"valid integer is required", response.content)
 
         response = self.client.post(
             "/api/documents/edit_pdf/",
@@ -1767,7 +1767,7 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn(b"doc must be an integer", response.content)
+        self.assertIn(b"valid integer is required", response.content)
 
         for doc_index in (-1, 2**32):
             with self.subTest(doc_index=doc_index):
@@ -1790,7 +1790,7 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
                 {
                     "documents": [self.doc2.id],
                     "update_document": True,
-                    "operations": [{"page": 1, "doc": 1}, {"page": 2, "doc": 2}],
+                    "operations": [{"page": 1, "doc": 0}, {"page": 2, "doc": 1}],
                 },
             ),
             content_type="application/json",
@@ -1816,6 +1816,86 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
         self.assertIn(b"Invalid source_mode", response.content)
 
     @mock.patch("documents.views.bulk_edit.edit_pdf")
+    def test_edit_pdf_rejects_empty_operations(self, m) -> None:
+        """
+        An empty operations list previously reached bulk_edit.edit_pdf()
+        and crashed with `ValueError: max() iterable argument is empty`
+        (via `max(op.get("doc", 0) for op in operations)`) whenever
+        update_document was true. Must now be rejected up front.
+        """
+        self.setup_mock(m, "edit_pdf")
+        response = self.client.post(
+            "/api/documents/edit_pdf/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "operations": [],
+                    "update_document": True,
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.views.bulk_edit.edit_pdf")
+    def test_edit_pdf_rejects_negative_doc_index(self, m) -> None:
+        """
+        A negative `doc` index was previously silently accepted and used
+        as a wrapping Python list index instead of being rejected.
+        """
+        self.setup_mock(m, "edit_pdf")
+        response = self.client.post(
+            "/api/documents/edit_pdf/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "operations": [{"page": 1, "doc": -1}],
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.views.bulk_edit.edit_pdf")
+    def test_edit_pdf_rejects_out_of_bounds_doc_index(self, m) -> None:
+        """
+        A `doc` index far larger than the number of operations previously
+        drove `pdf_docs = [pikepdf.new() for _ in range(max_idx + 1)]` to
+        attempt allocating an enormous number of real objects.
+        """
+        self.setup_mock(m, "edit_pdf")
+        response = self.client.post(
+            "/api/documents/edit_pdf/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "operations": [{"page": 1, "doc": 2**33}],
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.views.bulk_edit.edit_pdf")
+    def test_edit_pdf_rejects_non_positive_page(self, m) -> None:
+        self.setup_mock(m, "edit_pdf")
+        response = self.client.post(
+            "/api/documents/edit_pdf/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "operations": [{"page": 0}],
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.views.bulk_edit.edit_pdf")
     def test_edit_pdf_page_out_of_bounds(self, m) -> None:
         self.setup_mock(m, "edit_pdf")
         response = self.client.post(
@@ -1830,6 +1910,46 @@ class TestBulkEditAPI(DirectoriesMixin, APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn(b"out of bounds", response.content)
+        m.assert_not_called()
+
+    @mock.patch("documents.serialisers.bulk_edit.edit_pdf")
+    def test_bulk_edit_edit_pdf_rejects_empty_operations(self, m) -> None:
+        """
+        Same validation gap as test_edit_pdf_rejects_empty_operations, but
+        via the legacy generic /api/documents/bulk_edit/ method="edit_pdf"
+        path, which hand-parses `parameters["operations"]` independently
+        in BulkEditSerializer._validate_parameters_edit_pdf.
+        """
+        self.setup_mock(m, "edit_pdf")
+        response = self.client.post(
+            "/api/documents/bulk_edit/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "method": "edit_pdf",
+                    "parameters": {"operations": [], "update_document": True},
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        m.assert_not_called()
+
+    @mock.patch("documents.serialisers.bulk_edit.edit_pdf")
+    def test_bulk_edit_edit_pdf_rejects_out_of_bounds_doc_index(self, m) -> None:
+        self.setup_mock(m, "edit_pdf")
+        response = self.client.post(
+            "/api/documents/bulk_edit/",
+            json.dumps(
+                {
+                    "documents": [self.doc2.id],
+                    "method": "edit_pdf",
+                    "parameters": {"operations": [{"page": 1, "doc": 2**33}]},
+                },
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         m.assert_not_called()
 
     @mock.patch("documents.views.bulk_edit.edit_pdf")

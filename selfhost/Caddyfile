@@ -1,0 +1,4 @@
+# vps only — honestly keep this one on the laptop, too heavy for 4gb vps
+docs.example.com {
+	reverse_proxy 127.0.0.1:8084
+}

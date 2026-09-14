@@ -1,5 +1,4 @@
 name: selfhost
-
 on:
   push:
     paths:
@@ -8,7 +7,6 @@ on:
   pull_request:
     paths:
       - "selfhost/**"
-
 jobs:
   validate:
     runs-on: ubuntu-latest
